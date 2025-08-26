@@ -1,50 +1,90 @@
-#Colores utilizados en cada una de las partes de la aplicación
-#Se utiliza para seguir con las buenas prácticas de diseño y mantener una paleta de colores 
 
 COLORES = {
-    "background": "#2c3e50",       # Fondo principal (Azul oscuro)
-    "background_light": "#34495e", # Fondo de títulos (Azul más claro)
-    "surface": "#ffffff",          # Superficies de paneles (Blanco)
-    "primary_text": "#2c3e50",      # Texto principal sobre fondos claros
-    "secondary_text": "#7f8c8d",    # Texto secundario o de ayuda
-    "on_primary": "#ffffff",       # Texto sobre elementos de color
-    "accent": "#3498db",           # Color de acento (ej. variables)
-    "success": "#27ae60",          # Verde para éxito/validación
-    "warning": "#f39c12",          # Naranja para advertencias
-    "error": "#e74c3c",            # Rojo para errores
-    "disabled": "#95a5a6",         # Color para elementos deshabilitados
-    "border": "#bdc3c7",           # Color de bordes sutiles
-    "table_header": "#34495e",     # Cabecera de la tabla
-    "table_row_light": "#f8f9fa",   # Fila par de la tabla
-    "table_row_dark": "#e9ecef",    # Fila impar de la tabla
+    # Fondo general de la app (carcasa/cuerpo)
+    "background": "#F5F3EB",      # Beige suave
+    "bezel": "#C1BFB6",           # Bisel metálico superior (opcional)
+    # Pantalla (display)
+    "display_bg": "#2A1E1A",      # Café oscuro casi negro
+    "display_text": "#F08C3B",    # Naranja brillante
+    # Botones
+    "btn_clear_bg": "#E36B2C",    # Botón C (Clear)
+    "btn_clear_text": "#FFFFFF",
+    "btn_mem_bg": "#E87B32",      # Botones memoria (MC, M+, M-, MR)
+    "btn_mem_text": "#FFFFFF",
+    "btn_num_bg": "#555A5C",      # Botones numéricos (0-9) y punto
+    "btn_num_text": "#FFFFFF",
+    "btn_op_bg": "#3C3C3C",       # Botones de operación (+, -, ×, ÷, =)
+    "btn_op_text": "#FFFFFF",
 }
 
-# Fuentes
-FUENTES = {
-    "title": ("Segoe UI", 16, "bold"),
-    "subtitle": ("Segoe UI", 12, "bold"),
-    "body": ("Segoe UI", 11),
-    "button": ("Segoe UI", 11, "bold"),
-    "component": ("Segoe UI", 12, "bold"),
-    "table_header": ("Segoe UI", 12, "bold"),
-    "table_body": ("Segoe UI", 11, "bold"),
-}
-
-#Configuración de Estilos 
 ESTILO_CONFIG = {
-    "button": {
-        "fg": COLORES["on_primary"],
-        "font": FUENTES["button"],
-        "relief": "raised",
-        "bd": 2,
-        "cursor": "hand2",
-        "pady": 8,
-        "padx": 15,
+    # Pantalla principal (display)
+    "CTkLabel_display": {
+        "font": ("Consolas", 28, "bold"),
+        "text_color": COLORES["display_text"],
+        "bg_color": COLORES["display_bg"],
     },
-    "title_label": {
-        "bg": COLORES["background_light"],
-        "fg": COLORES["on_primary"],
-        "font": FUENTES["title"],
-        "pady": 15,
+    # Etiquetas generales
+    "CTkLabel_title": {
+        "font": ("Arial", 36, "bold"),
+        "text_color": "#E36B2C",  # Naranja intenso para destacar el título
+        "bg_color": "#F5F3EB",
     },
+    "CTkLabel_body": {
+        "font": ("Arial", 20, 'bold'),
+        "text_color": "#3C3C3C",
+    },
+    # Entrada de texto
+    "CTkEntry": {
+        "font": ("Consolas", 28),
+        "fg_color": COLORES["display_bg"],
+        "text_color": COLORES["display_text"],
+        "bg_color": COLORES["background"],
+        "border_color": COLORES["bezel"],
+        "border_width": 2,
+    },
+    # Botón C (Clear)
+    "CTkButton_clear": {
+        "font": ("Arial", 16, "bold"),
+        "fg_color": COLORES["btn_clear_bg"],
+        "text_color": COLORES["btn_clear_text"],
+        "bg_color": COLORES["background"],
+        "hover_color": "#F08C3B",
+    },
+    # Botones de memoria (MC, M+, M-, MR)
+    "CTkButton_mem": {
+        "font": ("Arial", 14, "bold"),
+        "fg_color": COLORES["btn_mem_bg"],
+        "text_color": COLORES["btn_mem_text"],
+        "bg_color": COLORES["background"],
+        "hover_color": "#F08C3B",
+    },
+    # Botones numéricos (0-9, .)
+    "CTkButton_num": {
+        "font": ("Arial", 16, "bold"),
+        "fg_color": COLORES["btn_num_bg"],
+        "text_color": COLORES["btn_num_text"],
+        "bg_color": COLORES["background"],
+        "hover_color": "#000000",
+        
+    },
+    # Botones de operación (+, -, ×, ÷, =)
+    "CTkButton_op": {
+        "font": ("Arial", 16, "bold"),
+        "fg_color": COLORES["btn_op_bg"],
+        "text_color": COLORES["btn_op_text"],
+        "bg_color": COLORES["background"],
+        "hover_color": "#000000",
+    },
+    "CTkLabel_result": {
+    "font": ("Consolas", 28, "bold"),
+    "text_color": COLORES["display_text"],  # Naranja brillante
+    "bg_color": COLORES["display_bg"],      # Café oscuro
+    },
+
+    # Marcos y frames
+    "CTkFrame": {
+        "fg_color": COLORES["bezel"],
+        "bg_color": COLORES["background"],
+    }
 }
