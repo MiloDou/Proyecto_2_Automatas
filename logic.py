@@ -1,134 +1,178 @@
-class const:
+import re
+
+# Clases para el AST
+class Const:
     def __init__(self, v):
-        # v deberia ser 0 o 1 pero ahorita no valido
-        self.v = v
+        self.v = int(v)
     def __repr__(self):
         return str(self.v)
 
-class var:
+class Var:
     def __init__(self, nombre):
-        # deberia convertir a mayusculas
-        self.nombre = nombre
+        self.nombre = nombre.upper()
     def __repr__(self):
         return self.nombre
 
-class no:
+class Not:
     def __init__(self, x):
         self.x = x
     def __repr__(self):
-        # falta parentesis en casos raros, lo dejo asi para mientras
+        # Paréntesis solo si es necesario
+        if isinstance(self.x, (And, Or)):
+            return f"({self.x})'"
         return f"{self.x}'"
 
-class y:
-    # and
+class And:
     def __init__(self, cosas):
-        self.cosas = tuple(cosas)  # deberia aplanar, luego veo
+        self.cosas = tuple(cosas)
     def __repr__(self):
-        # esto solo es una prueba
         return "*".join(str(c) for c in self.cosas)
 
-class o:
-    # or
+class Or:
     def __init__(self, cosas):
         self.cosas = tuple(cosas)
     def __repr__(self):
         return "+".join(str(c) for c in self.cosas)
 
-
-# intento de normalizador
+# Normalizador de símbolos
 simbolos = {
-    "∨": "+",
-    "|": "+",
-    "+": "+",
-    "·": "*",
-    "∙": "*",
-    "∧": "*",
-    "&": "*",
-    "*": "*",
-    "¬": "'",
-    "~": "'",
-    "!": "'",
+    "∨": "+", "|": "+", "+": "+",
+    "·": "*", "∙": "*", "∧": "*", "&": "*", "*": "*",
+    "¬": "'", "~": "'", "!": "'",
 }
 
 def normalizar(txt):
-    # pasar simbolos a los basicos
     for k, v in simbolos.items():
         txt = txt.replace(k, v)
-    # quitar espacios (luego veo si rompo algo)
     txt = "".join(ch for ch in txt if ch != " ")
     return txt
 
-# errores
-class parse_error(Exception):
+# Errores
+class ParseError(Exception):
     pass
 
-# parser medio inventado (falta jerarquia correcta)
-# necesito que me ayudes a poder recibir las expresiones ya formateadas y asi elimino esto
+# Parser simple (mejorado para soportar paréntesis y negaciones)
 def parsear(txt):
-    t = normalizar(txt)
-    if t == "":
-        # tal vez deberia usar parse_error, despues
-        raise Exception("expr vacia")
-    # esto deberia construir ast de verdad pero no me dio tiempo, mejor espero a que ya tengas la ui
-    # por ahora si hay un '+' asumo or de dos partes y ya
-    if "+" in t:
-        partes = t.split("+")
-        # oaun no mira parentesis
-        return o(partes)
-    elif "*" in t:
-        partes = t.split("*")
-        return y(partes)
-    elif t.endswith("'"):
-        # negacion b
-        return no(t[:-1])
-    elif t in ("0", "1"):
-        return const(int(t))
-    else:
-        return var(t)
+    txt = normalizar(txt)
+    if txt == "":
+        raise ParseError("Expresión vacía")
+    # Recursivo para paréntesis
+    def parse_expr(s):
+        s = s.strip()
+        # Constantes
+        if s == "0" or s == "1":
+            return Const(s)
+        # Negación
+        if s.endswith("'"):
+            return Not(parse_expr(s[:-1]))
+        # Paréntesis
+        if s.startswith("(") and s.endswith(")"):
+            # Quita paréntesis externos si están balanceados
+            count = 0
+            for i, c in enumerate(s):
+                if c == "(": count += 1
+                if c == ")": count -= 1
+                if count == 0 and i != len(s)-1:
+                    break
+            else:
+                return parse_expr(s[1:-1])
+        # Operadores
+        # Primero OR, luego AND
+        count = 0
+        for i in range(len(s)-1, -1, -1):
+            if s[i] == ")": count += 1
+            if s[i] == "(": count -= 1
+            if count == 0 and s[i] == "+":
+                return Or([parse_expr(s[:i]), parse_expr(s[i+1:])])
+        count = 0
+        for i in range(len(s)-1, -1, -1):
+            if s[i] == ")": count += 1
+            if s[i] == "(": count -= 1
+            if count == 0 and s[i] == "*":
+                return And([parse_expr(s[:i]), parse_expr(s[i+1:])])
+        # Variable
+        if re.fullmatch(r"[A-Za-z]", s):
+            return Var(s)
+        raise ParseError(f"Expresión inválida: {s}")
+    return parse_expr(txt)
 
-# leyes
-# idea: cada funcion recibe una expr y devuelve (expr_nueva, nombre_ley)
-# ahora solo devuelven lo mismo para tener donde colgar luego
+# Leyes booleanas (solo ejemplos, puedes expandir)
 def ley_idempotencia(e):
-    # x+x = x ; x*x = x
-    return e, "ley idempotencia (borrador)"
+    # x + x = x ; x * x = x
+    if isinstance(e, Or):
+        if len(e.cosas) == 2 and str(e.cosas[0]) == str(e.cosas[1]):
+            return e.cosas[0], "Ley de Idempotencia"
+    if isinstance(e, And):
+        if len(e.cosas) == 2 and str(e.cosas[0]) == str(e.cosas[1]):
+            return e.cosas[0], "Ley de Idempotencia"
+    return e, ""
 
-def ley_identidad(e):
-    # x+0=x ; x*1=x ; x+1=1 ; x*0=0
-    return e, "ley identidad (borrador)"
+def ley_neutro(e):
+    # x + 0 = x ; x * 1 = x
+    if isinstance(e, Or):
+        for c in e.cosas:
+            if isinstance(c, Const) and c.v == 0:
+                otros = [x for x in e.cosas if not (isinstance(x, Const) and x.v == 0)]
+                if len(otros) == 1:
+                    return otros[0], "Ley del Neutro"
+    if isinstance(e, And):
+        for c in e.cosas:
+            if isinstance(c, Const) and c.v == 1:
+                otros = [x for x in e.cosas if not (isinstance(x, Const) and x.v == 1)]
+                if len(otros) == 1:
+                    return otros[0], "Ley del Neutro"
+    return e, ""
+
+def ley_anulador(e):
+    # x + 1 = 1 ; x * 0 = 0
+    if isinstance(e, Or):
+        for c in e.cosas:
+            if isinstance(c, Const) and c.v == 1:
+                return Const(1), "Ley del Anulador"
+    if isinstance(e, And):
+        for c in e.cosas:
+            if isinstance(c, Const) and c.v == 0:
+                return Const(0), "Ley del Anulador"
+    return e, ""
 
 def ley_complemento(e):
     # x + x' = 1 ; x * x' = 0
-    # pendiente: detectar complementos de verdad
-    return e, "ley complemento (borrador)"
+    if isinstance(e, Or):
+        if len(e.cosas) == 2:
+            a, b = e.cosas
+            if (isinstance(a, Not) and str(a.x) == str(b)) or (isinstance(b, Not) and str(b.x) == str(a)):
+                return Const(1), "Ley del Complemento"
+    if isinstance(e, And):
+        if len(e.cosas) == 2:
+            a, b = e.cosas
+            if (isinstance(a, Not) and str(a.x) == str(b)) or (isinstance(b, Not) and str(b.x) == str(a)):
+                return Const(0), "Ley del Complemento"
+    return e, ""
 
-def ley_absorcion(e):
-    # x + x*y = x ; x*(x+y)=x
-    return e, "ley absorcion (borrador)"
+def ley_doble_negacion(e):
+    # !!x = x
+    if isinstance(e, Not) and isinstance(e.x, Not):
+        return e.x.x, "Ley de Doble Negación"
+    return e, ""
 
-def ley_demorgan(e):
-    # (x+y)' = x'*y' ; (x*y)' = x' + y'
-    return e, "ley demorgan (borrador)"
 
 boolean_laws = [
     ley_idempotencia,
-    ley_identidad,
+    ley_neutro,
+    ley_anulador,
     ley_complemento,
-    ley_absorcion,
-    ley_demorgan,
+    ley_doble_negacion,
 ]
 
-# funcion de simplificar paso a paso (no hace nada real aun)
+# Simplificación paso a paso
 def simplificar_paso(e):
-    # deberia caminar bottom-up pero no se bien todavia
-    # por ahora solo intento aplicar una ley y me rindo jajajaj
     pasos = []
     for ley in boolean_laws:
         antes = representar(e)
         e2, nombre = ley(e)
         despues = representar(e2)
-        if despues != antes:
-            pasos.append((antes, nombre, despues, "nota: wip"))
+        if nombre and despues != antes:
+            pasos.append((antes, nombre, despues, ""))
             e = e2
             break
     return e, pasos
@@ -140,7 +184,7 @@ def simplificar_expresion(texto):
         return "error", [("entrada", "error parseo", str(err), "")]
     todos = []
     actual = expr
-    for _ in range(3):
+    for _ in range(10):  # Hasta 10 pasos para evitar bucles infinitos
         nuevo, pasos = simplificar_paso(actual)
         todos.extend(pasos)
         if representar(nuevo) == representar(actual):
@@ -154,6 +198,5 @@ def representar(e):
         return e
     try:
         return str(e)
-    except:
-        # plan b
+    except Exception:
         return f"{e}"
