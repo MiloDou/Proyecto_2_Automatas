@@ -26,7 +26,13 @@ class And:
     def __init__(self, cosas):
         self.cosas = tuple(cosas)
     def __repr__(self):
-        return "*".join(str(c) for c in self.cosas)
+        parts = []
+        for c in self.cosas:
+            s = str(c)
+            if isinstance(c, Or):
+                s = f"({s})"
+            parts.append(s)
+        return "*".join(parts)
 
 class Or:
     def __init__(self, cosas):
@@ -42,60 +48,95 @@ simbolos = {
 }
 
 def normalizar(txt):
+    # normaliza símbolos alternativos y quita espacios
     for k, v in simbolos.items():
         txt = txt.replace(k, v)
-    txt = "".join(ch for ch in txt if ch != " ")
+    txt = re.sub(r"\s+", "", txt)
+    # inserta and implícito: letra/0/1/)' seguido de letra/(
+    txt = re.sub(r"([A-Za-z0-9\)'])(?=[A-Za-z\(])", r"\1*", txt)
     return txt
 
 # Errores
 class ParseError(Exception):
     pass
 
-# Parser simple (mejorado para soportar paréntesis y negaciones)
 def parsear(txt):
     txt = normalizar(txt)
     if txt == "":
         raise ParseError("Expresión vacía")
-    # Recursivo para paréntesis
-    def parse_expr(s):
+
+    def strip_outer_parens(s: str) -> str:
+        # quita un par de paréntesis exteriores si están balanceados
+        if not (s.startswith("(") and s.endswith(")")):
+            return s
+        count = 0
+        for i, ch in enumerate(s):
+            if ch == "(":
+                count += 1
+            elif ch == ")":
+                count -= 1
+            if count == 0 and i != len(s) - 1:
+                return s  # hay algo fuera del par externo
+        return s[1:-1]
+
+    def parse_expr(s: str):
         s = s.strip()
-        # Constantes
+        if s == "":
+            raise ParseError("Expresión incompleta")
+        s = strip_outer_parens(s)
+
+        # 1) buscar + al nivel superior (derecha→izquierda)
+        count = 0
+        for i in range(len(s)-1, -1, -1):
+            ch = s[i]
+            if ch == ")":
+                count += 1
+            elif ch == "(":
+                count -= 1
+            elif count == 0 and ch == "+":
+                left = s[:i]
+                right = s[i+1:]
+                return Or([parse_expr(left), parse_expr(right)])
+
+        # 2) buscar * al nivel superior
+        count = 0
+        for i in range(len(s)-1, -1, -1):
+            ch = s[i]
+            if ch == ")":
+                count += 1
+            elif ch == "(":
+                count -= 1
+            elif count == 0 and ch == "*":
+                left = s[:i]
+                right = s[i+1:]
+                return And([parse_expr(left), parse_expr(right)])
+
+        # 3) NOT postfijo sobre el factor (una o más comillas)
+        if s.endswith("'"):
+            n = len(s) - len(s.rstrip("'"))
+            core = s[:-n]
+            if core == "":
+                raise ParseError("Negación sin operando")
+            node = parse_expr(core)
+            for _ in range(n):
+                node = Not(node)
+            return node
+
+        # 4) constantes
         if s == "0" or s == "1":
             return Const(s)
-        # Negación
-        if s.endswith("'"):
-            return Not(parse_expr(s[:-1]))
-        # Paréntesis
-        if s.startswith("(") and s.endswith(")"):
-            # Quita paréntesis externos si están balanceados
-            count = 0
-            for i, c in enumerate(s):
-                if c == "(": count += 1
-                if c == ")": count -= 1
-                if count == 0 and i != len(s)-1:
-                    break
-            else:
-                return parse_expr(s[1:-1])
-        # Operadores
-        # Primero OR, luego AND
-        count = 0
-        for i in range(len(s)-1, -1, -1):
-            if s[i] == ")": count += 1
-            if s[i] == "(": count -= 1
-            if count == 0 and s[i] == "+":
-                return Or([parse_expr(s[:i]), parse_expr(s[i+1:])])
-        count = 0
-        for i in range(len(s)-1, -1, -1):
-            if s[i] == ")": count += 1
-            if s[i] == "(": count -= 1
-            if count == 0 and s[i] == "*":
-                return And([parse_expr(s[:i]), parse_expr(s[i+1:])])
-        # Variable
+
+        # 5) variable de una letra
         if re.fullmatch(r"[A-Za-z]", s):
             return Var(s)
-        raise ParseError(f"Expresión inválida: {s}")
-    return parse_expr(txt)
 
+        # 6) caso de paréntesis internos o forma inválida
+        if s.startswith("(") and s.endswith(")"):
+            return parse_expr(strip_outer_parens(s))
+
+        raise ParseError(f"Expresión inválida: {s}")
+
+    return parse_expr(txt)
 # Leyes booleanas (solo ejemplos, puedes expandir)
 def ley_idempotencia(e):
     # x + x = x ; x * x = x
@@ -135,6 +176,32 @@ def ley_anulador(e):
                 return Const(0), "Ley del Anulador"
     return e, ""
 
+def ley_absorcion(e):
+    # x + x*y = x ; x*(x+y) = x
+    if isinstance(e, Or):
+        # busca un término que sea And y otro igual a uno de sus factores
+        for t in e.cosas:
+            for u in e.cosas:
+                if t is u:
+                    continue
+                if isinstance(u, And):
+                    if any(str(t) == str(f) for f in u.cosas):
+                        nuevos = [x for x in e.cosas if x is not u]
+                        return (t if len(nuevos) == 1 else Or(nuevos)), "Ley de Absorción"
+
+
+    if isinstance(e, And):
+        for t in e.cosas:
+            for u in e.cosas:
+                if t is u:
+                    continue
+                if isinstance(u, Or):
+                    if any(str(t) == str(f) for f in u.cosas):
+                        nuevos = [x for x in e.cosas if x is not u]
+                        return (t if len(nuevos) == 1 else And(nuevos)), "Ley de Absorción"
+    return e, ""
+
+
 def ley_complemento(e):
     # x + x' = 1 ; x * x' = 0
     if isinstance(e, Or):
@@ -157,11 +224,12 @@ def ley_doble_negacion(e):
 
 
 boolean_laws = [
+    ley_doble_negacion,
     ley_idempotencia,
     ley_neutro,
     ley_anulador,
     ley_complemento,
-    ley_doble_negacion,
+    ley_absorcion,
 ]
 
 # Simplificación paso a paso
