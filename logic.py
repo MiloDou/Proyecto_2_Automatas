@@ -26,13 +26,13 @@ class And:
     def __init__(self, cosas):
         self.cosas = tuple(cosas)
     def __repr__(self):
-        parts = []
+        partes = []
         for c in self.cosas:
             s = str(c)
             if isinstance(c, Or):
                 s = f"({s})"
-            parts.append(s)
-        return "*".join(parts)
+            partes.append(s)
+        return "*".join(partes)
 
 class Or:
     def __init__(self, cosas):
@@ -48,12 +48,10 @@ simbolos = {
 }
 
 def normalizar(txt):
-    # normaliza símbolos alternativos y quita espacios
     for k, v in simbolos.items():
         txt = txt.replace(k, v)
     txt = re.sub(r"\s+", "", txt)
-    # inserta and implícito: letra/0/1/)' seguido de letra/(
-    txt = re.sub(r"([A-Za-z0-9\)'])(?=[A-Za-z\(])", r"\1*", txt)
+    txt = re.sub(r"([A-Za-z0-9)'])(?=[A-Za-z(])", r"\1*", txt)
     return txt
 
 # Errores
@@ -139,14 +137,52 @@ def parsear(txt):
     return parse_expr(txt)
 # Leyes booleanas (solo ejemplos, puedes expandir)
 def ley_idempotencia(e):
-    # x + x = x ; x * x = x
     if isinstance(e, Or):
-        if len(e.cosas) == 2 and str(e.cosas[0]) == str(e.cosas[1]):
-            return e.cosas[0], "Ley de Idempotencia"
+        vistos, nuevos = set(), []
+        for t in e.cosas:
+            k = repr(t)
+            if k not in vistos:
+                vistos.add(k)
+                nuevos.append(t)
+        if len(nuevos) != len(e.cosas):
+            return (nuevos[0] if len(nuevos) == 1 else Or(tuple(nuevos))), "Ley de Idempotencia (+ n-aria)"
+        return e, ""
     if isinstance(e, And):
-        if len(e.cosas) == 2 and str(e.cosas[0]) == str(e.cosas[1]):
-            return e.cosas[0], "Ley de Idempotencia"
+        vistos, nuevos = set(), []
+        for t in e.cosas:
+            k = repr(t)
+            if k not in vistos:
+                vistos.add(k)
+                nuevos.append(t)
+        if len(nuevos) != len(e.cosas):
+            return (nuevos[0] if len(nuevos) == 1 else And(tuple(nuevos))), "Ley de Idempotencia (* n-aria)"
+        return e, ""
     return e, ""
+
+def ley_asociativa(e):
+    if isinstance(e, Or):
+        planos = []
+        for t in e.cosas:
+            if isinstance(t, Or):
+                planos.extend(t.cosas)
+            else:
+                planos.append(t)
+        if len(planos) != len(e.cosas):
+            return Or(tuple(planos)), "Ley Asociativa (+ aplanado)"
+        return e, ""
+    if isinstance(e, And):
+        planos = []
+        for t in e.cosas:
+            if isinstance(t, And):
+                planos.extend(t.cosas)
+            else:
+                planos.append(t)
+        if len(planos) != len(e.cosas):
+            return And(tuple(planos)), "Ley Asociativa (* aplanado)"
+        return e, ""
+    return e, ""
+
+
 
 def ley_neutro(e):
     # x + 0 = x ; x * 1 = x
@@ -177,29 +213,29 @@ def ley_anulador(e):
     return e, ""
 
 def ley_absorcion(e):
-    # x + x*y = x ; x*(x+y) = x
     if isinstance(e, Or):
-        # busca un término que sea And y otro igual a uno de sus factores
-        for t in e.cosas:
-            for u in e.cosas:
-                if t is u:
+        t = list(e.cosas)
+        for a in t:
+            for b in t:
+                if a is b:
                     continue
-                if isinstance(u, And):
-                    if any(str(t) == str(f) for f in u.cosas):
-                        nuevos = [x for x in e.cosas if x is not u]
-                        return (t if len(nuevos) == 1 else Or(nuevos)), "Ley de Absorción"
-
-
+                if isinstance(b, And):
+                    if any(str(a) == str(f) for f in b.cosas):
+                        nuevos = [x for x in t if x is not b]
+                        return (a if len(nuevos) == 1 else Or(nuevos)), "Ley de Absorción"
     if isinstance(e, And):
-        for t in e.cosas:
-            for u in e.cosas:
-                if t is u:
+        t = list(e.cosas)
+        for a in t:
+            for b in t:
+                if a is b:
                     continue
-                if isinstance(u, Or):
-                    if any(str(t) == str(f) for f in u.cosas):
-                        nuevos = [x for x in e.cosas if x is not u]
-                        return (t if len(nuevos) == 1 else And(nuevos)), "Ley de Absorción"
+                if isinstance(b, Or):
+                    if any(str(a) == str(f) for f in b.cosas):
+                        nuevos = [x for x in t if x is not b]
+                        return (a if len(nuevos) == 1 else And(nuevos)), "Ley de Absorción"
     return e, ""
+
+
 
 
 def ley_complemento(e):
@@ -222,15 +258,309 @@ def ley_doble_negacion(e):
         return e.x.x, "Ley de Doble Negación"
     return e, ""
 
+def ley_demorgan(e):
+    if isinstance(e, Not) and isinstance(e.x, Or):
+        return And(tuple(Not(t) for t in e.x.cosas)), "Ley de De Morgan"
+    if isinstance(e, Not) and isinstance(e.x, And):
+        return Or(tuple(Not(t) for t in e.x.cosas)), "Ley de De Morgan"
+    return e, ""
+
+def ley_distributiva_factor(e):
+    if isinstance(e, Or):
+        terms = list(e.cosas)
+        ands = [t for t in terms if isinstance(t, And)]
+        for i in range(len(ands)):
+            for j in range(i+1, len(ands)):
+                a = ands[i].cosas
+                b = ands[j].cosas
+                comunes = [x for x in a if any(str(x)==str(y) for y in b)]
+                if comunes:
+                    resto_a = [x for x in a if all(str(x)!=str(c) for c in comunes)]
+                    resto_b = [x for x in b if all(str(x)!=str(c) for c in comunes)]
+                    if not resto_a: resto_a = []
+                    if not resto_b: resto_b = []
+                    or_interno = Or(tuple({str(x):x for x in resto_a+resto_b}.values())) if (resto_a or resto_b) else None
+                    nuevo = And(tuple(comunes) + ((or_interno,) if or_interno else tuple()))
+                    nuevos = [x for x in terms if x not in (ands[i], ands[j])] + [nuevo]
+                    return Or(tuple(nuevos)), "Ley Distributiva (factor común)"
+    return e, ""
+
+def ley_producto_suma_comun(e):
+    if isinstance(e, And):
+        ors = [t for t in e.cosas if isinstance(t, Or) and len(t.cosas) == 2]
+        otros = [t for t in e.cosas if not isinstance(t, Or)]
+        for i in range(len(ors)):
+            for j in range(i + 1, len(ors)):
+                a1, a2 = ors[i].cosas
+                b1, b2 = ors[j].cosas
+                pares = [
+                    (a1, a2, b1, b2),
+                    (a1, a2, b2, b1),
+                    (a2, a1, b1, b2),
+                    (a2, a1, b2, b1),
+                ]
+                for c, x, d, y_ in pares:
+                    comp = (
+                        (isinstance(x, Not) and repr(x.x) == repr(y_))
+                        or (isinstance(y_, Not) and repr(y_.x) == repr(x))
+                    )
+                    if repr(c) == repr(d) and comp:
+                        nuevos = otros + [c]
+                        if len(nuevos) == 1:
+                            return nuevos[0], "Ley de producto de sumas con común y complemento"
+                        return And(nuevos), "Ley de producto de sumas con común y complemento"
+    return e, ""
+
+def ley_distributiva_comun_and(e):
+    # reduce (x*y...) + (x*z...) cuando y y z son complementarios y x... es el factor común
+    def reducir_or(or_node):
+        # solo manejamos el caso de dos sumandos, ambos productos
+        if not (isinstance(or_node, Or) and len(or_node.cosas) == 2):
+            return None
+        t1, t2 = or_node.cosas
+        if not (isinstance(t1, And) and isinstance(t2, And)):
+            return None
+
+        a = list(t1.cosas)
+        b = list(t2.cosas)
+
+        # factores comunes por representación
+        comunes = [x for x in a if any(str(x) == str(y) for y in b)]
+        resto_a = [x for x in a if all(str(x) != str(c) for c in comunes)]
+        resto_b = [x for x in b if all(str(x) != str(c) for c in comunes)]
+
+        # necesitamos que quede exactamente 1 factor residual en cada lado
+        if len(resto_a) != 1 or len(resto_b) != 1:
+            return None
+
+        ra, rb = resto_a[0], resto_b[0]
+        son_complementarios = (
+            (isinstance(ra, Not) and str(ra.x) == str(rb)) or
+            (isinstance(rb, Not) and str(rb.x) == str(ra))
+        )
+        if not son_complementarios:
+            return None
+
+        # se reduce a solo el producto de los comunes
+        if len(comunes) == 0:
+            return Const(1)  # (a' + a) caso puro, no es el que nos interesa aquí
+        if len(comunes) == 1:
+            return comunes[0]
+        return And(tuple(comunes))
+
+    # caso 1: la expresión es el OR a reducir
+    if isinstance(e, Or):
+        nuevo = reducir_or(e)
+        if nuevo is not None:
+            return nuevo, "Ley distributiva con complemento"
+
+    # caso 2: la expresión es un AND que contiene un OR reducible
+    if isinstance(e, And):
+        partes = list(e.cosas)
+        for i, ch in enumerate(partes):
+            if isinstance(ch, Or):
+                reducido = reducir_or(ch)
+                if reducido is not None:
+                    partes[i] = reducido
+                    # si el AND queda de 1 término, colapsa
+                    return (partes[0] if len(partes) == 1 else And(tuple(partes))), "Ley distributiva con complemento (subexpresión)"
+    return e, ""
+
+def ley_complemento_ext(e):
+    # or raíz: si hay un par complementario -> 1
+    if isinstance(e, Or):
+        terms = list(e.cosas)
+        for i in range(len(terms)):
+            for j in range(i+1, len(terms)):
+                a, b = terms[i], terms[j]
+                if (isinstance(a, Not) and repr(a.x) == repr(b)) or (isinstance(b, Not) and repr(b.x) == repr(a)):
+                    return Const(1), "Ley del Complemento (extendida)"
+
+        # or como hijo dentro de and: si algún hijo or tiene complemento interno, colapsa ese hijo a 1
+        # y deja que la ley de identidad/anulador se encargue de limpiar el and
+        return e, ""
+
+    # and raíz: si hay un par complementario -> 0
+    if isinstance(e, And):
+        terms = list(e.cosas)
+        for i in range(len(terms)):
+            for j in range(i+1, len(terms)):
+                a, b = terms[i], terms[j]
+                if (isinstance(a, Not) and repr(a.x) == repr(b)) or (isinstance(b, Not) and repr(b.x) == repr(a)):
+                    return Const(0), "Ley del Complemento (extendida)"
+
+        # and que contiene un or con complemento interno: reduce ese or a 1
+        nuevos = []
+        changed = False
+        for t in terms:
+            if isinstance(t, Or):
+                hijos = list(t.cosas)
+                hay_comp = False
+                for i in range(len(hijos)):
+                    for j in range(i+1, len(hijos)):
+                        a, b = hijos[i], hijos[j]
+                        if (isinstance(a, Not) and repr(a.x) == repr(b)) or (isinstance(b, Not) and repr(b.x) == repr(a)):
+                            hay_comp = True
+                            break
+                    if hay_comp: break
+                if hay_comp:
+                    nuevos.append(Const(1))
+                    changed = True
+                else:
+                    nuevos.append(t)
+            else:
+                nuevos.append(t)
+        if changed:
+            return And(tuple(nuevos)), "Ley del Complemento (subexpresión)"
+        return e, ""
+
+    # not/var/const: sin cambio
+    return e, ""
+def ley_identidad_anulador_ext(e):
+    # or: 1 domina; 0 es neutro (se elimina)
+    if isinstance(e, Or):
+        terms = list(e.cosas)
+        if any(isinstance(t, Const) and t.v == 1 for t in terms):
+            return Const(1), "Identidad/Anulador (+ extendida)"
+        nuevos = [t for t in terms if not (isinstance(t, Const) and t.v == 0)]
+        if len(nuevos) != len(terms):
+            if len(nuevos) == 0:
+                return Const(0), "Identidad/Anulador (+ extendida)"
+            if len(nuevos) == 1:
+                return nuevos[0], "Identidad/Anulador (+ extendida)"
+            return Or(tuple(nuevos)), "Identidad/Anulador (+ extendida)"
+        return e, ""
+
+    # and: 0 domina; 1 es neutro (se elimina)
+    if isinstance(e, And):
+        terms = list(e.cosas)
+        if any(isinstance(t, Const) and t.v == 0 for t in terms):
+            return Const(0), "Identidad/Anulador (* extendida)"
+        nuevos = [t for t in terms if not (isinstance(t, Const) and t.v == 1)]
+        if len(nuevos) != len(terms):
+            if len(nuevos) == 0:
+                return Const(1), "Identidad/Anulador (* extendida)"
+            if len(nuevos) == 1:
+                return nuevos[0], "Identidad/Anulador (* extendida)"
+            return And(tuple(nuevos)), "Identidad/Anulador (* extendida)"
+        return e, ""
+
+    return e, ""
+
+def ley_complemento_and_en_or(e):
+    if not isinstance(e, Or):
+        return e, ""
+    partes = list(e.cosas)
+    cambio = False
+
+    def and_tiene_complemento(n):
+        t = list(n.cosas)
+        for i in range(len(t)):
+            for j in range(i+1, len(t)):
+                a, b = t[i], t[j]
+                if (isinstance(a, Not) and repr(a.x) == repr(b)) or (isinstance(b, Not) and repr(b.x) == repr(a)):
+                    return True
+        return False
+
+    for i, term in enumerate(partes):
+        if isinstance(term, And) and and_tiene_complemento(term):
+            partes[i] = Const(0)
+            cambio = True
+
+    if not cambio:
+        return e, ""
+
+    # limpiar OR: 1 domina; 0 es neutro
+    if any(isinstance(x, Const) and x.v == 1 for x in partes):
+        return Const(1), "Complemento en AND dentro de OR"
+    partes = [x for x in partes if not (isinstance(x, Const) and x.v == 0)]
+    if len(partes) == 0:
+        return Const(0), "Complemento en AND dentro de OR"
+    if len(partes) == 1:
+        return partes[0], "Complemento en AND dentro de OR"
+    return Or(tuple(partes)), "Complemento en AND dentro de OR"
+
+
+def ley_complemento_en_or_general(e):
+    def flatten_or_terms(node):
+        pila = [node]
+        planos = []
+        while pila:
+            t = pila.pop()
+            if isinstance(t, Or):
+                pila.extend(t.cosas)
+            else:
+                planos.append(t)
+        return planos
+
+    if isinstance(e, Or):
+        terms = flatten_or_terms(e)
+        if len(terms) != len(e.cosas):
+            return Or(tuple(terms)), "Ley Asociativa (+ aplanado)"
+        for i in range(len(terms)):
+            for j in range(i+1, len(terms)):
+                a, b = terms[i], terms[j]
+                if (isinstance(a, Not) and repr(a.x) == repr(b)) or (isinstance(b, Not) and repr(b.x) == repr(a)):
+                    return Const(1), "Ley del Complemento (OR n-ario)"
+        return e, ""
+
+    if isinstance(e, And):
+        partes = list(e.cosas)
+        cambio = False
+        for idx, term in enumerate(partes):
+            if isinstance(term, Or):
+                terms = flatten_or_terms(term)
+                if len(terms) != len(term.cosas):
+                    partes[idx] = Or(tuple(terms))
+                    cambio = True
+                    continue
+                hay_comp = False
+                for i in range(len(terms)):
+                    for j in range(i+1, len(terms)):
+                        a, b = terms[i], terms[j]
+                        if (isinstance(a, Not) and repr(a.x) == repr(b)) or (isinstance(b, Not) and repr(b.x) == repr(a)):
+                            hay_comp = True
+                            break
+                    if hay_comp:
+                        break
+                if hay_comp:
+                    partes[idx] = Const(1)
+                    cambio = True
+        if cambio:
+            if any(isinstance(x, Const) and x.v == 0 for x in partes):
+                return Const(0), "Identidad/Anulador (* extendida)"
+            partes = [x for x in partes if not (isinstance(x, Const) and x.v == 1)]
+            if len(partes) == 0:
+                return Const(1), "Identidad/Anulador (* extendida)"
+            if len(partes) == 1:
+                return partes[0], "Identidad/Anulador (* extendida)"
+            return And(tuple(partes)), "Identidad/Anulador (* extendida)"
+        return e, ""
+    return e, ""
+
 
 boolean_laws = [
-    ley_doble_negacion,
+    ley_distributiva_comun_and,
+    ley_distributiva_factor,
+    ley_asociativa,
+    ley_complemento_and_en_or,       # <- NUEVA
+    ley_complemento_en_or_general,
+    ley_identidad_anulador_ext,
     ley_idempotencia,
+    ley_producto_suma_comun,
     ley_neutro,
     ley_anulador,
+    ley_complemento_ext,
     ley_complemento,
+    ley_doble_negacion,
     ley_absorcion,
+    ley_demorgan,
 ]
+
+
+
+
+
 
 # Simplificación paso a paso
 def simplificar_paso(e):
